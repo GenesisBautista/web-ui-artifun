@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wave Background</title>
+<style>
+  :root {
+    --chrome: #2c2c2c;
+    --chrome-2: #383838;
+    --chrome-3: #444;
+    --line: #3e3e3e;
+    --text: #f2f2f2;
+    --text-2: #a8a8a8;
+    --text-3: #777;
+    --accent: #0d99ff;
+    --stage-dark: #1e1e1e;
+    --stage-light: #f0f0f0;
+    --radius: 5px;
+    --toolbar-h: 44px;
+    --inspector-w: 280px;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--chrome);
+    color: var(--text);
+    font: 11px/1.4 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", system-ui, sans-serif;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    display: grid;
+    grid-template-rows: var(--toolbar-h) 1fr;
+    grid-template-columns: 1fr var(--inspector-w);
+    grid-template-areas: "toolbar toolbar" "stage inspector";
+  }
+  body.no-inspector { grid-template-columns: 1fr 0; }
+  body.no-inspector .inspector { display: none; }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  /* ---------- Toolbar ---------- */
+  .toolbar {
+    grid-area: toolbar;
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 8px 0 12px;
+    background: var(--chrome);
+    border-bottom: 1px solid var(--line);
+    min-width: 0;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; min-width: 0; margin-right: auto; }
+  .brand-mark {
+    width: 18px; height: 18px; border-radius: 4px; flex: none;
+    background: linear-gradient(135deg, #0a1f44, #7fd6e8);
+  }
+  .brand-path { color: var(--text-3); white-space: nowrap; }
+  .brand-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tb-group { display: flex; align-items: center; gap: 2px; }
+  .tb-sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+  .tb-btn {
+    height: 28px; min-width: 28px; padding: 0 8px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    background: transparent; border: 0; border-radius: var(--radius);
+    color: var(--text); white-space: nowrap; flex: none;
+  }
+  .tb-btn:hover { background: var(--chrome-2); }
+  @media (min-width: 721px) { .brand { flex: none; } }
+  @media (max-width: 1080px) { .tb-btn:not(.primary) .tb-text, .brand-path { display: none; } }
+  .tb-btn.primary { background: var(--accent); color: #fff; }
+  .tb-btn.primary:hover { background: #2aa5ff; }
+  .tb-btn[aria-pressed="true"] { background: var(--chrome-3); }
+  .tb-btn svg { width: 16px; height: 16px; flex: none; }
+  .zoom-label { min-width: 48px; font-variant-numeric: tabular-nums; }
+  .tb-select {
+    height: 28px; padding: 0 22px 0 8px; border-radius: var(--radius);
+    background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23a8a8a8'/%3E%3C/svg%3E") no-repeat right 8px center;
+    border: 0; appearance: none; -webkit-appearance: none;
+  }
+  .tb-select:hover { background-color: var(--chrome-2); }
+  .tb-select option { background: var(--chrome); }
+  .bg-swatch { width: 14px; height: 14px; border-radius: 50%; border: 1px solid #666; }
+  .bg-swatch.dark { background: var(--stage-dark); }
+  .bg-swatch.light { background: var(--stage-light); }
+  .bg-swatch.checker { background: conic-gradient(#bbb 25%, #fff 0 50%, #bbb 0 75%, #fff 0) 0 0 / 6px 6px; }
+
+  /* ---------- Stage ---------- */
+  .stage {
+    grid-area: stage;
+    position: relative; overflow: hidden;
+    background: var(--stage-dark);
+    cursor: grab; touch-action: none; user-select: none;
+  }
+  .stage.panning { cursor: grabbing; }
+  .stage[data-bg="light"] { background: var(--stage-light); }
+  .stage[data-bg="checker"] { background: conic-gradient(#d4d4d4 25%, #f4f4f4 0 50%, #d4d4d4 0 75%, #f4f4f4 0) 0 0 / 20px 20px; }
+  .world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  .frame {
+    position: relative; overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.06), 0 8px 40px rgba(0,0,0,.45);
+  }
+  .stage[data-bg="light"] .frame, .stage[data-bg="checker"] .frame { box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 8px 30px rgba(0,0,0,.18); }
+  .frame ui-wave-background { width: 100%; height: 100%; pointer-events: none; }
+  .frame-label {
+    position: absolute; left: 0; top: 0; pointer-events: none;
+    color: var(--text-2); white-space: nowrap; font-size: 11px;
+  }
+  .stage[data-bg="light"] .frame-label, .stage[data-bg="checker"] .frame-label { color: #666; }
+  .frame-label b { font-weight: 500; color: inherit; }
+  .hint {
+    position: absolute; left: 12px; bottom: 10px; pointer-events: none;
+    color: var(--text-3); font-size: 10.5px;
+  }
+  .stage[data-bg="light"] .hint, .stage[data-bg="checker"] .hint { color: #888; }
+
+  /* ---------- Inspector ---------- */
+  .inspector {
+    grid-area: inspector;
+    background: var(--chrome);
+    border-left: 1px solid var(--line);
+    overflow-y: auto; overscroll-behavior: contain;
+    min-width: 0;
+  }
+  .insp-head {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 40px; padding: 0 12px 0 16px;
+    border-bottom: 1px solid var(--line);
+    font-weight: 600;
+  }
+  .insp-head .muted { color: var(--text-3); font-weight: 400; }
+  .sec { border-bottom: 1px solid var(--line); }
+  .sec-h {
+    width: 100%; display: flex; align-items: center; gap: 6px;
+    height: 36px; padding: 0 12px 0 10px;
+    background: transparent; border: 0; text-align: left;
+    font-size: 11px; font-weight: 600; letter-spacing: .02em; color: var(--text);
+  }
+  .sec-h svg { width: 10px; height: 10px; color: var(--text-3); transition: transform .12s; }
+  .sec.collapsed .sec-h svg { transform: rotate(-90deg); }
+  .sec.collapsed .sec-b { display: none; }
+  .sec-b { padding: 0 12px 10px 16px; display: grid; gap: 4px; }
+
+  .row { display: grid; grid-template-columns: 72px 1fr; align-items: center; gap: 8px; min-height: 28px; }
+  .row[hidden] { display: none; }
+  .lbl { color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
+  .lbl.scrub { cursor: ew-resize; }
+  .lbl:hover { color: var(--text); }
+  body.scrubbing, body.scrubbing * { cursor: ew-resize !important; user-select: none; }
+
+  .ctl { display: flex; align-items: center; gap: 6px; min-width: 0; }
+
+  .field {
+    height: 26px; display: flex; align-items: center;
+    background: var(--chrome-2); border: 1px solid transparent; border-radius: var(--radius);
+    padding: 0 6px; min-width: 0;
+  }
+  .field:hover { border-color: var(--chrome-3); }
+  .field:focus-within { border-color: var(--accent); }
+  .field input { width: 100%; min-width: 0; background: transparent; border: 0; outline: 0; padding: 0; font-variant-numeric: tabular-nums; }
+  .field .unit { color: var(--text-3); margin-left: 2px; }
+  .num { width: 58px; flex: none; }
+
+  .slider {
+    flex: 1; min-width: 0; height: 16px; margin: 0;
+    -webkit-appearance: none; appearance: none; background: transparent;
+    --pct: 50%;
+  }
+  .slider::-webkit-slider-runnable-track {
+    height: 3px; border-radius: 2px;
+    background: linear-gradient(to right, var(--text-2) var(--pct), var(--chrome-3) var(--pct));
+  }
+  .slider::-moz-range-track { height: 3px; border-radius: 2px; background: var(--chrome-3); }
+  .slider::-moz-range-progress { height: 3px; border-radius: 2px; background: var(--text-2); }
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4.5px; border-radius: 50%;
+    background: #fff; border: 0; box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.4);
+  }
+  .slider::-moz-range-thumb {
+    width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 0;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.4);
+  }
+  .slider:focus-visible { outline: none; }
+  .slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--accent); }
+
+  .color-field { flex: 1; gap: 8px; }
+  .swatch {
+    position: relative; width: 16px; height: 16px; border-radius: 3px; flex: none;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); overflow: hidden;
+  }
+  .swatch input[type="color"] { position: absolute; inset: -4px; width: 200%; height: 200%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+  .color-field input[type="text"] { text-transform: uppercase; }
+
+  .switch {
+    width: 28px; height: 16px; border-radius: 8px; border: 0; padding: 0; flex: none;
+    background: var(--chrome-3); position: relative; transition: background .12s;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+    background: #fff; transition: transform .12s;
+  }
+  .switch[aria-checked="true"] { background: var(--accent); }
+  .switch[aria-checked="true"]::after { transform: translateX(12px); }
+  .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .seg { display: flex; flex: 1; background: var(--chrome-2); border-radius: var(--radius); padding: 2px; gap: 2px; }
+  .seg button { flex: 1; height: 22px; border: 0; border-radius: 3px; background: transparent; color: var(--text-2); }
+  .seg button[aria-pressed="true"] { background: var(--chrome-3); color: var(--text); }
+
+  .dropdown { flex: 1; position: relative; }
+  .dropdown select {
+    width: 100%; height: 26px; padding: 0 22px 0 6px; border-radius: var(--radius);
+    background: var(--chrome-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%23a8a8a8'/%3E%3C/svg%3E") no-repeat right 8px center;
+    border: 1px solid transparent; appearance: none; -webkit-appearance: none; outline: 0;
+  }
+  .dropdown select:hover { border-color: var(--chrome-3); }
+  .dropdown select:focus { border-color: var(--accent); }
+  .dropdown option { background: var(--chrome); }
+
+  .insp-foot { padding: 12px 16px 20px; color: var(--text-3); line-height: 1.6; }
+  .insp-foot kbd {
+    font: inherit; font-size: 10px; padding: 0 4px; border-radius: 3px;
+    background: var(--chrome-2); color: var(--text-2); border: 1px solid var(--line);
+  }
+
+  /* ---------- Toast ---------- */
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px);
+    background: #111; color: #fff; padding: 8px 14px; border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.4); opacity: 0; pointer-events: none;
+    transition: opacity .15s, transform .15s; z-index: 10;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ---------- Phone ---------- */
+  @media (max-width: 720px) {
+    body {
+      grid-template-columns: 1fr;
+      grid-template-rows: var(--toolbar-h) 1fr auto;
+      grid-template-areas: "toolbar" "stage" "inspector";
+    }
+    body.no-inspector { grid-template-columns: 1fr; }
+    .inspector { border-left: 0; border-top: 1px solid var(--line); max-height: 48vh; padding-bottom: env(safe-area-inset-bottom); }
+    .brand-path, .zoom-group, .tb-text, .hint, .tb-sep.hide-sm { display: none; }
+    .toolbar { gap: 4px; padding: 0 6px 0 10px; }
+  }
+</style>
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <span class="brand-path">bits /</span>
+      <span class="brand-name">Wave Background</span>
+    </div>
+
+    <select class="tb-select" id="preset" title="Frame size" aria-label="Frame size"></select>
+
+    <div class="tb-group" role="group" aria-label="Canvas background">
+      <button class="tb-btn" data-bg="dark" title="Dark canvas"><span class="bg-swatch dark"></span></button>
+      <button class="tb-btn" data-bg="light" title="Light canvas"><span class="bg-swatch light"></span></button>
+      <button class="tb-btn" data-bg="checker" title="Checkerboard"><span class="bg-swatch checker"></span></button>
+    </div>
+
+    <div class="tb-sep hide-sm"></div>
+
+    <div class="tb-group zoom-group" role="group" aria-label="Zoom">
+      <button class="tb-btn" id="zoomOut" title="Zoom out (−)">
+        <svg viewBox="0 0 16 16"><path d="M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <button class="tb-btn zoom-label" id="zoomLabel" title="Zoom to 100% (Shift+0)">100%</button>
+      <button class="tb-btn" id="zoomIn" title="Zoom in (+)">
+        <svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </button>
+      <button class="tb-btn" id="zoomFit" title="Zoom to fit (Shift+1)">Fit</button>
+    </div>
+
+    <div class="tb-sep hide-sm"></div>
+
+    <button class="tb-btn" id="resetAll" title="Reset all params">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9"/><path d="M2.5 2.5v3h3"/></svg>
+      <span class="tb-text">Reset</span>
+    </button>
+    <button class="tb-btn" id="copyJson" title="Copy params JSON">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 2.5c-1.5 0-2 .7-2 2v1.5c0 1-.5 2-1.5 2 1 0 1.5 1 1.5 2v1.5c0 1.3.5 2 2 2M10.5 2.5c1.5 0 2 .7 2 2v1.5c0 1 .5 2 1.5 2-1 0-1.5 1-1.5 2v1.5c0 1.3-.5 2-2 2"/></svg>
+      <span class="tb-text">JSON</span>
+    </button>
+    <button class="tb-btn primary" id="copyHtml" title="Copy HTML snippet">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5"/></svg>
+      <span class="tb-text">Copy HTML</span>
+    </button>
+    <button class="tb-btn" id="toggleInspector" title="Toggle inspector (\)" aria-pressed="true">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M10 2.5v11"/></svg>
+    </button>
+  </header>
+
+  <main class="stage" id="stage" data-bg="dark">
+    <div class="world" id="world">
+      <div class="frame" id="frame">
+        <ui-wave-background id="bit"></ui-wave-background>
+      </div>
+    </div>
+    <div class="frame-label" id="frameLabel"></div>
+    <div class="hint">Drag to pan · ⌘/Ctrl + scroll to zoom</div>
+  </main>
+
+  <aside class="inspector" id="inspector" aria-label="Inspector">
+    <div class="insp-head"><span>Design</span><span class="muted">ui-wave-background</span></div>
+    <div id="sections"></div>
+    <div class="insp-foot">
+      Drag a label to scrub · <kbd>⌥</kbd> fine · double-click label to reset<br>
+      <kbd>↑</kbd><kbd>↓</kbd> nudge · <kbd>⇧</kbd> ×10 · <kbd>\</kbd> hide panel
+    </div>
+  </aside>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script type="module">
+import { PARAMS, TAG, toAttr } from './wave-background.js';
+
+const $ = (s) => document.querySelector(s);
+const bit = $('#bit');
+const stage = $('#stage');
+const world = $('#world');
+const frame = $('#frame');
+const frameLabel = $('#frameLabel');
+
+/* ---------------- Persistence (per-viewer convenience) ---------------- */
+const KEY = 'bits:wave-background';
+let store = {};
+try { store = JSON.parse(localStorage.getItem(KEY)) || {}; } catch {}
+let saveTimer;
+const save = () => {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch {} }, 150);
+};
+
+/* ---------------- Param state ---------------- */
+const BY_NAME = Object.fromEntries(PARAMS.map((p) => [p.name, p]));
+const values = {};
+const controls = {};
+
+function set(name, v) {
+  bit[name] = v;
+  values[name] = bit[name]; // normalized by the component (clamped, parsed)
+  controls[name]?.update(values[name]);
+  refreshVisibility();
+  store.values = { ...values };
+  save();
+}
+
+function refreshVisibility() {
+  for (const p of PARAMS) {
+    if (p.showIf && controls[p.name]) controls[p.name].row.hidden = !values[p.showIf];
+  }
+}
+
+const decimals = (step) => (String(step).split('.')[1] || '').length;
+const snap = (p, v) => {
+  const s = Math.round((v - p.min) / p.step) * p.step + p.min;
+  return Number(Math.min(p.max, Math.max(p.min, s)).toFixed(decimals(p.step)));
+};
+const fmt = (p, v) => Number(v).toFixed(decimals(p.step));
+const optVal = (o) => (typeof o === 'object' ? o.value : o);
+const optLabel = (o) => (typeof o === 'object' ? o.label : o);
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function makeLabel(p, scrubbable) {
+  const label = el('span', 'lbl' + (scrubbable ? ' scrub' : ''), p.label);
+  label.title = (scrubbable ? 'Drag to scrub · ' : '') + 'Double-click to reset';
+  label.addEventListener('dblclick', () => set(p.name, p.default));
+  return label;
+}
+
+/* ---------------- Controls ---------------- */
+function rangeControl(p) {
+  const row = el('div', 'row');
+  const label = makeLabel(p, true);
+  const ctl = el('div', 'ctl');
+
+  const slider = el('input', 'slider');
+  Object.assign(slider, { type: 'range', min: p.min, max: p.max, step: p.step });
+  slider.setAttribute('aria-label', p.label);
+  slider.addEventListener('input', () => set(p.name, Number(slider.value)));
+
+  const field = el('label', 'field num');
+  const input = el('input');
+  input.inputMode = 'decimal';
+  input.setAttribute('aria-label', p.label + ' value');
+  field.append(input);
+  if (p.unit) field.append(el('span', 'unit', p.unit));
+
+  const commit = () => {
+    const n = parseFloat(input.value);
+    if (Number.isFinite(n)) set(p.name, snap(p, n)); else update(values[p.name]);
+  };
+  input.addEventListener('focus', () => input.select());
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { commit(); input.blur(); }
+    else if (e.key === 'Escape') { update(values[p.name]); input.blur(); }
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      const dir = e.key === 'ArrowUp' ? 1 : -1;
+      set(p.name, snap(p, values[p.name] + dir * p.step * (e.shiftKey ? 10 : 1)));
+      input.select();
+    }
+  });
+
+  // Drag-to-scrub on label.
+  label.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    label.setPointerCapture(e.pointerId);
+    document.body.classList.add('scrubbing');
+    let lastX = e.clientX;
+    let acc = values[p.name];
+    const move = (ev) => {
+      const dx = ev.clientX - lastX;
+      lastX = ev.clientX;
+      const k = ev.altKey ? 0.1 : ev.shiftKey ? 4 : 1;
+      acc = Math.min(p.max, Math.max(p.min, acc + dx * ((p.max - p.min) / 240) * k));
+      set(p.name, snap(p, acc));
+    };
+    const up = () => {
+      document.body.classList.remove('scrubbing');
+      label.removeEventListener('pointermove', move);
+      label.removeEventListener('pointerup', up);
+      label.removeEventListener('pointercancel', up);
+    };
+    label.addEventListener('pointermove', move);
+    label.addEventListener('pointerup', up);
+    label.addEventListener('pointercancel', up);
+  });
+
+  function update(v) {
+    slider.value = v;
+    slider.style.setProperty('--pct', ((v - p.min) / (p.max - p.min)) * 100 + '%');
+    if (document.activeElement !== input) input.value = fmt(p, v);
+  }
+
+  ctl.append(slider, field);
+  row.append(label, ctl);
+  return { row, update };
+}
+
+function colorControl(p) {
+  const row = el('div', 'row');
+  const label = makeLabel(p, false);
+  const ctl = el('div', 'ctl');
+  const field = el('div', 'field color-field');
+  const swatch = el('span', 'swatch');
+  const picker = el('input');
+  picker.type = 'color';
+  picker.setAttribute('aria-label', p.label + ' color picker');
+  picker.addEventListener('input', () => set(p.name, picker.value));
+  swatch.append(picker);
+
+  const hex = el('input');
+  hex.type = 'text';
+  hex.spellcheck = false;
+  hex.maxLength = 7;
+  hex.setAttribute('aria-label', p.label + ' hex');
+  const commit = () => {
+    const s = hex.value.trim().replace(/^#?/, '#');
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(s)) set(p.name, s); else update(values[p.name]);
+  };
+  hex.addEventListener('focus', () => hex.select());
+  hex.addEventListener('blur', commit);
+  hex.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { commit(); hex.blur(); }
+    if (e.key === 'Escape') { update(values[p.name]); hex.blur(); }
+  });
+
+  function update(v) {
+    swatch.style.background = v;
+    picker.value = v;
+    if (document.activeElement !== hex) hex.value = v.replace('#', '').toUpperCase();
+  }
+
+  field.append(swatch, hex);
+  ctl.append(field);
+  row.append(label, ctl);
+  return { row, update };
+}
+
+function toggleControl(p) {
+  const row = el('div', 'row');
+  const label = makeLabel(p, false);
+  const ctl = el('div', 'ctl');
+  const sw = el('button', 'switch');
+  sw.type = 'button';
+  sw.setAttribute('role', 'switch');
+  sw.setAttribute('aria-label', `${p.group} ${p.label}`);
+  sw.addEventListener('click', () => set(p.name, !values[p.name]));
+  ctl.append(sw);
+  row.append(label, ctl);
+  return { row, update: (v) => sw.setAttribute('aria-checked', String(!!v)) };
+}
+
+function selectControl(p) {
+  const row = el('div', 'row');
+  const label = makeLabel(p, false);
+  const ctl = el('div', 'ctl');
+  const useDropdown = p.display === 'dropdown' || (p.display !== 'segmented' && p.options.length > 4);
+
+  if (useDropdown) {
+    const wrap = el('div', 'dropdown');
+    const sel = el('select');
+    sel.setAttribute('aria-label', p.label);
+    for (const o of p.options) {
+      const opt = el('option', null, optLabel(o));
+      opt.value = optVal(o);
+      sel.append(opt);
+    }
+    sel.addEventListener('change', () => set(p.name, sel.value));
+    wrap.append(sel);
+    ctl.append(wrap);
+    row.append(label, ctl);
+    return { row, update: (v) => { sel.value = v; } };
+  }
+
+  const seg = el('div', 'seg');
+  const btns = p.options.map((o) => {
+    const b = el('button', null, optLabel(o));
+    b.type = 'button';
+    b.addEventListener('click', () => set(p.name, optVal(o)));
+    seg.append(b);
+    return [optVal(o), b];
+  });
+  ctl.append(seg);
+  row.append(label, ctl);
+  return { row, update: (v) => btns.forEach(([val, b]) => b.setAttribute('aria-pressed', String(val === v))) };
+}
+
+const builders = { range: rangeControl, color: colorControl, toggle: toggleControl, select: selectControl };
+
+/* ---------------- Sections ---------------- */
+const chevron = '<svg viewBox="0 0 10 10"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+store.collapsed ||= {};
+const groups = [...new Set(PARAMS.map((p) => p.group || 'General'))];
+const sectionsEl = $('#sections');
+for (const g of groups) {
+  const sec = el('section', 'sec' + (store.collapsed[g] ? ' collapsed' : ''));
+  const head = el('button', 'sec-h');
+  head.type = 'button';
+  head.innerHTML = chevron;
+  head.append(g);
+  head.setAttribute('aria-expanded', String(!store.collapsed[g]));
+  head.addEventListener('click', () => {
+    const c = sec.classList.toggle('collapsed');
+    head.setAttribute('aria-expanded', String(!c));
+    store.collapsed[g] = c;
+    save();
+  });
+  const body = el('div', 'sec-b');
+  for (const p of PARAMS.filter((p) => (p.group || 'General') === g)) {
+    const c = builders[p.type](p);
+    controls[p.name] = c;
+    body.append(c.row);
+  }
+  sec.append(head, body);
+  sectionsEl.append(sec);
+}
+
+// Initial values: saved state (if valid) else defaults.
+const saved = store.values || {};
+for (const p of PARAMS) {
+  bit[p.name] = p.name in saved ? saved[p.name] : p.default;
+  values[p.name] = bit[p.name];
+  controls[p.name].update(values[p.name]);
+}
+refreshVisibility();
+
+/* ---------------- Export ---------------- */
+const toast = $('#toast');
+let toastTimer;
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
+}
+
+async function copy(text, msg) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const ta = el('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.append(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
+  showToast(msg);
+}
+
+function htmlSnippet() {
+  const attrs = PARAMS
+    .filter((p) => values[p.name] !== p.default)
+    .map((p) => `  ${toAttr(p.name)}="${values[p.name]}"`);
+  const open = attrs.length ? `<${TAG}\n${attrs.join('\n')}\n>` : `<${TAG}>`;
+  return `<script type="module" src="wave-background.js"><\/script>\n${open}</${TAG}>`;
+}
+
+$('#copyHtml').addEventListener('click', () => copy(htmlSnippet(), 'HTML snippet copied'));
+$('#copyJson').addEventListener('click', () => copy(JSON.stringify(values, null, 2), 'Params JSON copied'));
+$('#resetAll').addEventListener('click', () => {
+  for (const p of PARAMS) set(p.name, p.default);
+  showToast('Reset to defaults');
+});
+
+/* ---------------- Canvas: frame presets ---------------- */
+const PRESETS = [
+  { id: 'desktop', label: 'Desktop', w: 1440, h: 900 },
+  { id: 'laptop', label: 'Laptop', w: 1280, h: 800 },
+  { id: 'tablet', label: 'Tablet', w: 834, h: 1194 },
+  { id: 'phone', label: 'Phone', w: 390, h: 844 },
+  { id: 'square', label: 'Square', w: 1080, h: 1080 },
+  { id: 'banner', label: 'Banner', w: 1500, h: 500 },
+];
+const presetSel = $('#preset');
+for (const pr of PRESETS) {
+  const o = el('option', null, `${pr.label}  ${pr.w}×${pr.h}`);
+  o.value = pr.id;
+  presetSel.append(o);
+}
+let preset = PRESETS.find((p) => p.id === store.preset) || PRESETS[0];
+presetSel.value = preset.id;
+presetSel.addEventListener('change', () => {
+  preset = PRESETS.find((p) => p.id === presetSel.value);
+  store.preset = preset.id;
+  save();
+  applyPreset();
+  fit();
+});
+function applyPreset() {
+  frame.style.width = preset.w + 'px';
+  frame.style.height = preset.h + 'px';
+}
+
+/* ---------------- Canvas: background ---------------- */
+const bgBtns = document.querySelectorAll('[data-bg]:not(.stage)');
+function setBg(bg) {
+  stage.dataset.bg = bg;
+  bgBtns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.bg === bg)));
+  store.bg = bg;
+  save();
+}
+bgBtns.forEach((b) => b.addEventListener('click', () => setBg(b.dataset.bg)));
+setBg(store.bg || 'dark');
+
+/* ---------------- Canvas: zoom & pan ---------------- */
+let z = 1, tx = 0, ty = 0, fitMode = true;
+const ZMIN = 0.05, ZMAX = 8;
+const zoomLabel = $('#zoomLabel');
+
+function applyT() {
+  world.style.transform = `translate(${tx}px, ${ty}px) scale(${z})`;
+  zoomLabel.textContent = Math.round(z * 100) + '%';
+  frameLabel.style.transform = `translate(${tx}px, ${ty - 20}px)`;
+  frameLabel.innerHTML = `<b>${preset.label}</b> · ${preset.w} × ${preset.h}`;
+}
+
+function fit() {
+  const r = stage.getBoundingClientRect();
+  const pad = r.width < 500 ? 24 : 64;
+  z = Math.min((r.width - pad * 2) / preset.w, (r.height - pad * 2) / preset.h, 1);
+  z = Math.max(ZMIN, z);
+  tx = (r.width - preset.w * z) / 2;
+  ty = (r.height - preset.h * z) / 2 + 8;
+  fitMode = true;
+  applyT();
+}
+
+function zoomTo(nz, cx, cy) {
+  const r = stage.getBoundingClientRect();
+  cx ??= r.width / 2;
+  cy ??= r.height / 2;
+  nz = Math.min(ZMAX, Math.max(ZMIN, nz));
+  tx = cx - (cx - tx) * (nz / z);
+  ty = cy - (cy - ty) * (nz / z);
+  z = nz;
+  fitMode = false;
+  applyT();
+}
+
+$('#zoomIn').addEventListener('click', () => zoomTo(z * 1.25));
+$('#zoomOut').addEventListener('click', () => zoomTo(z / 1.25));
+$('#zoomLabel').addEventListener('click', () => zoomTo(1));
+$('#zoomFit').addEventListener('click', fit);
+
+stage.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const r = stage.getBoundingClientRect();
+  if (e.ctrlKey || e.metaKey) {
+    zoomTo(z * Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top);
+  } else {
+    tx -= e.deltaX;
+    ty -= e.deltaY;
+    fitMode = false;
+    applyT();
+  }
+}, { passive: false });
+
+// Pointer pan (1 pointer) + pinch zoom (2 pointers).
+const pointers = new Map();
+let pinch = null;
+stage.addEventListener('pointerdown', (e) => {
+  stage.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  stage.classList.add('panning');
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), z };
+  }
+});
+stage.addEventListener('pointermove', (e) => {
+  const prev = pointers.get(e.pointerId);
+  if (!prev) return;
+  const cur = { x: e.clientX, y: e.clientY };
+  pointers.set(e.pointerId, cur);
+  if (pointers.size === 2 && pinch) {
+    const [a, b] = [...pointers.values()];
+    const r = stage.getBoundingClientRect();
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    zoomTo(pinch.z * (d / pinch.d), (a.x + b.x) / 2 - r.left, (a.y + b.y) / 2 - r.top);
+  } else if (pointers.size === 1) {
+    tx += cur.x - prev.x;
+    ty += cur.y - prev.y;
+    fitMode = false;
+    applyT();
+  }
+});
+const endPointer = (e) => {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (!pointers.size) stage.classList.remove('panning');
+};
+stage.addEventListener('pointerup', endPointer);
+stage.addEventListener('pointercancel', endPointer);
+
+new ResizeObserver(() => { if (fitMode) fit(); else applyT(); }).observe(stage);
+
+/* ---------------- Inspector toggle + shortcuts ---------------- */
+const toggleBtn = $('#toggleInspector');
+function setInspector(open) {
+  document.body.classList.toggle('no-inspector', !open);
+  toggleBtn.setAttribute('aria-pressed', String(open));
+  store.inspector = open;
+  save();
+}
+toggleBtn.addEventListener('click', () => setInspector(document.body.classList.contains('no-inspector')));
+setInspector(store.inspector !== false);
+
+document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (t.matches?.('input[type="text"], input:not([type]), select, textarea')) return;
+  if (e.key === '\\') { e.preventDefault(); setInspector(document.body.classList.contains('no-inspector')); }
+  else if (e.shiftKey && (e.code === 'Digit1')) { e.preventDefault(); fit(); }
+  else if (e.shiftKey && (e.code === 'Digit0')) { e.preventDefault(); zoomTo(1); }
+  else if (!e.metaKey && !e.ctrlKey && (e.key === '+' || e.key === '=')) zoomTo(z * 1.25);
+  else if (!e.metaKey && !e.ctrlKey && (e.key === '-' || e.key === '_')) zoomTo(z / 1.25);
+});
+
+applyPreset();
+fit();
+</script>
+</body>
+</html>
